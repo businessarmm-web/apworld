@@ -125,6 +125,12 @@
   .moveBtn.dimmed{opacity:.34;filter:saturate(.55)}
   .moveBtn b{display:block;font-size:15px}
   .moveBtn small{display:flex;justify-content:space-between;gap:8px;margin-top:5px;color:#42516d}
+  .combatQuestionPanel{display:grid;gap:10px}
+  .selectedMoveBanner{border:2px solid var(--gold);border-radius:8px;background:linear-gradient(180deg,#fff7cf,#f3e6a9);color:#172033;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
+  .selectedMoveBanner b{font-size:15px}
+  .selectedMoveBanner small{color:#42516d}
+  .combatQuestionText{border:2px solid #172033;border-radius:8px;background:#f8f5e8;color:#172033;padding:12px;line-height:1.4}
+  .combatAnswerGrid{display:grid;gap:8px}
   .combatBox{border:3px solid #eef3ff;border-radius:6px;background:#10192b;box-shadow:0 0 0 2px #172033;padding:12px}
   .combatPrompt{border:3px solid #172033;border-radius:6px;background:#f8f5e8;color:#172033;padding:12px;line-height:1.4}
   .turnLog{display:grid;gap:6px;max-height:132px;overflow:auto}
@@ -295,14 +301,14 @@
         <div class="moveGrid" id="moveGrid"></div>
       </div>
       <div class="combatPrompt" id="moveInfo">Choose a move. Answer the question to power it, then the boss takes a turn.</div>
-      <div class="question" id="encounterQuestion">Choose a move to begin your turn.</div>
-      <div class="answers" id="encounterAnswers"></div>
-      <div class="feedback" id="encounterFeedback"></div>
-      <div class="turnLog" id="turnLog"></div>
+      <div class="question hidden" id="encounterQuestion">Choose a move to begin your turn.</div>
+      <div class="answers hidden" id="encounterAnswers"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn primary hidden" id="encounterNext">Next Attack</button>
         <button class="btn hidden" id="encounterClose">Return to Map</button>
       </div>
+      <div class="feedback" id="encounterFeedback"></div>
+      <div class="turnLog" id="turnLog"></div>
     </div>
   </div>
 </div>
@@ -768,6 +774,7 @@ function updateEncounterMeters() {
 }
 function renderMovePanel() {
   const e=state.encounter, grid=$('moveGrid'); if(!e || !grid) return;
+  grid.className='moveGrid';
   grid.innerHTML=HERO_MOVES.map(m=>{
     const pp=e.pp[m.id] ?? 0;
     const selected=e.selectedMove?.id===m.id;
@@ -789,8 +796,8 @@ function beginPlayerTurn() {
   e.locked=false; e.current=null; e.selectedMove=null;
   $('encounterFeedback').innerHTML='';
   $('encounterNext').classList.add('hidden'); $('encounterClose').classList.add('hidden');
-  $('encounterQuestion').innerHTML=`<span class="subtitle">Turn ${e.turn}</span><br>Choose a move, then answer a question to launch it.`;
-  $('encounterAnswers').innerHTML='';
+  $('encounterQuestion').classList.add('hidden'); $('encounterAnswers').classList.add('hidden');
+  $('encounterQuestion').innerHTML=''; $('encounterAnswers').innerHTML='';
   $('moveInfo').textContent=`${e.boss.name} is weak to ${bossWeakness(e.boss)}-type moves.`;
   renderMovePanel(); updateEncounterMeters();
 }
@@ -801,14 +808,16 @@ function selectMove(moveId) {
   if((e.pp[move.id]||0)<=0) { toast('No PP left for that move.'); return; }
   e.selectedMove=move; e.pp[move.id]--; e.current=makeEncounterQuestion(move);
   $('moveInfo').textContent=`${move.name} • TYPE/${move.type} • POWER ${move.power}. ${move.note}`;
-  renderMovePanel(); renderEncounterQuestion();
+  renderEncounterQuestion();
 }
 function renderEncounterQuestion() {
   const e=state.encounter; if(!e || !e.current) return;
-  const q=e.current;
-  $('encounterQuestion').innerHTML=q.direction==='definitionToTerm' ? `<span class="subtitle">Attack prompt: choose the matching term.</span><br>${escapeHTML(q.prompt)}` : `<span class="subtitle">Attack prompt: choose the matching definition.</span><br><b>${escapeHTML(q.prompt)}</b>`;
-  const box=$('encounterAnswers'); box.innerHTML='';
-  q.answers.forEach(ans=>{ const btn=document.createElement('button'); btn.className='answer attack'; btn.innerHTML=escapeHTML(ans); btn.onclick=()=>answerEncounter(btn,ans); box.appendChild(btn); });
+  const q=e.current, move=e.selectedMove, box=$('moveGrid');
+  const promptHTML=q.direction==='definitionToTerm' ? `<span class="subtitle">Attack prompt: choose the matching term.</span><br>${escapeHTML(q.prompt)}` : `<span class="subtitle">Attack prompt: choose the matching definition.</span><br><b>${escapeHTML(q.prompt)}</b>`;
+  box.className='combatQuestionPanel';
+  box.innerHTML=`<div class="selectedMoveBanner"><div><b>${escapeHTML(move.name)}</b><br><small>TYPE/${escapeHTML(move.type)} • POWER ${move.power} • PP ${e.pp[move.id]}/${move.pp}</small></div><small>SELECTED</small></div><div class="combatQuestionText">${promptHTML}</div><div class="combatAnswerGrid" id="combatAnswerGrid"></div>`;
+  const answerGrid=$('combatAnswerGrid');
+  q.answers.forEach(ans=>{ const btn=document.createElement('button'); btn.className='answer attack'; btn.innerHTML=escapeHTML(ans); btn.onclick=()=>answerEncounter(btn,ans); answerGrid.appendChild(btn); });
   updateEncounterMeters();
 }
 function nextEncounterQuestion() { beginPlayerTurn(); }
@@ -817,7 +826,7 @@ function answerEncounter(btn,ans) {
   const q=e.current, move=e.selectedMove, ok=ans===q.correctAnswer;
   if(!q || !move) return;
   state.save.total++; if(ok) state.save.correct++;
-  document.querySelectorAll('#encounterAnswers .answer').forEach(x=>{ if(x.textContent===q.correctAnswer) x.classList.add('correct'); });
+  document.querySelectorAll('#moveGrid .answer, #encounterAnswers .answer').forEach(x=>{ if(x.textContent===q.correctAnswer) x.classList.add('correct'); });
   if(ok) {
     const weak=(bossWeakness(e.boss)===move.type);
     const damage=move.power+(weak?2:0);
@@ -833,7 +842,7 @@ function answerEncounter(btn,ans) {
     $('encounterFeedback').innerHTML=`Miss. Correct answer: <b>${escapeHTML(q.correctAnswer)}</b><br><span class="subtitle">${escapeHTML(q.correct.term)} - ${escapeHTML(q.correct.definition)}</span>`;
   }
   if(e.hp>0) bossTurn(ok);
-  state.explorer.hp=e.heroHp; save(); updateStats(); updateEncounterMeters(); renderMovePanel();
+  state.explorer.hp=e.heroHp; save(); updateStats(); updateEncounterMeters();
   if(e.hp<=0) {
     state.save.exploreCleared[exploreClearKey(e.boss)]=true;
     if(!state.save.exploreRewards.includes(e.boss.reward)) state.save.exploreRewards.push(e.boss.reward);
